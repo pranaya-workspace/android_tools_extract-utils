@@ -1303,6 +1303,7 @@ function write_package_definition() {
 #
 # $1: devices falling under common to be added to guard - optional
 # $2: custom guard - optional
+# $3: Full Soong namespace params (eg: imports) - optional
 #
 # Calls write_makefile_header for each of the makefiles and
 # write_blueprint_header for Android.bp and creates the initial
@@ -1340,8 +1341,17 @@ EOF
     write_makefile_header "$PRODUCTMK"
     write_blueprint_header "$ANDROIDBP"
 
+    # 
+    local SOONG_NS_IMPORTS=""
+
+    if [ -n "$3" ]; then
+        local NS_IMPORTS_ARGS="$3"
+        SOONG_NS_IMPORTS="\"${NS_IMPORTS_ARGS//,/\", \"}\""
+    fi
+
     cat << EOF >> "$ANDROIDBP"
 soong_namespace {
+    imports: [$SOONG_NS_IMPORTS]
 }
 
 EOF
