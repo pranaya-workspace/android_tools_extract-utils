@@ -480,7 +480,66 @@ function write_blueprint_packages() {
             if [ "$EXTRA" != "none" ]; then
                 printf '\tcompile_multilib: "%s",\n' "$EXTRA"
             fi
-            printf '\tcheck_elf_files: false,\n'
+            if [ "$EU_ENABLE_BINARY_CHECKS" = "true" ]; then
+                local CHECK_ELF_FILES="true"
+                local CHECK_ELF_DEPENDENCIES="true"
+                local CHECK_ALLOW_UNDEFINED_SYMBOLS="false"
+                local ADDITIONNAL_DEPENDENCIES=""
+                for ARG in "${ARGS[@]}"; do
+                    if [ "$ARG" = "NOCHECK" ]; then
+                        CHECK_ELF_FILES="false"
+                    fi
+                    if [ "$ARG" = "NODEPS" ]; then
+                        CHECK_ELF_FILES="false"
+                        CHECK_ELF_DEPENDENCIES="false"
+                    fi
+                    if [ "$ARG" = "NOSYMBOLS" ]; then
+                        CHECK_ALLOW_UNDEFINED_SYMBOLS="true"
+                    fi
+                    if [[ "$ARG" =~ ^ADDDEP ]]; then
+                        local NEWDEP=$(echo "$ARG" | cut -d '=' -f 2)
+                        ADDITIONNAL_DEPENDENCIES="\"${NEWDEP//,/\",\\n\\t\\t\"}\""
+                    fi
+                done
+                if [ "$CHECK_ELF_DEPENDENCIES" != "false" ]; then
+                    printf '\tcheck_elf_files: %s,\n' $CHECK_ELF_FILES
+                    printf '\tallow_undefined_symbols: %s,\n' $CHECK_ALLOW_UNDEFINED_SYMBOLS
+                    printf '\tshared_libs: [\n'
+                    local LIBDIR="lib"
+                    if [ "${EXTRA}" = "64" ]
+                    then
+                        LIBDIR="lib64"
+                    fi
+                    "${PATCHELF}" --print-needed "${ANDROID_ROOT}/${OUTDIR}/${SRC}/${LIBDIR}/${FILE}" 2>/dev/null | while read -r lib; do
+                        local SKIPDEP="false"
+                        for ARG in "${ARGS[@]}"; do
+                            if [[ "$ARG" =~ ^REPLACEDEP ]]; then
+                                local REPLACED_LIB="$(echo "$ARG" | cut -d '=' -f2 | cut -d ':' -f1)"
+                                if [ "${REPLACED_LIB}" = "${lib/.so/}" ]; then
+                                    lib="$(echo "$ARG" | cut -d ':' -f2)"
+                                fi
+                            fi
+                            if [[ "$ARG" =~ ^RMDEP ]]; then
+                                local REMOVED_DEP="$(echo "$ARG" | cut -d '=' -f2)"
+                                if [ "${lib/.so/}" == "$REMOVED_DEP" ]; then
+                                    SKIPDEP="true"
+                                fi
+                            fi
+                        done
+                        if [ "$SKIPDEP" != "true" ]; then
+                            printf '\t\t"%s",\n' "${lib/.so/}"
+                        fi
+                    done
+                    if [ -n "$ADDITIONNAL_DEPENDENCIES" ]; then
+                        echo -ne "\t\t$ADDITIONNAL_DEPENDENCIES,\n"
+                    fi
+                    printf '\t],\n'
+                else
+                    printf '\tcheck_elf_files: false,\n'
+                fi
+            else
+                printf '\tcheck_elf_files: false,\n'
+            fi
         elif [ "$CLASS" = "APEX" ]; then
             printf 'prebuilt_apex {\n'
             printf '\tname: "%s",\n' "$PKGNAME"
@@ -547,11 +606,68 @@ function write_blueprint_packages() {
             printf '\towner: "%s",\n' "$VENDOR"
             if [ "$EXTENSION" != "sh" ]; then
                 printf '\tsrcs: ["%s/bin/%s"],\n' "$SRC" "$FILE"
-                printf '\tcheck_elf_files: false,\n'
                 printf '\tstrip: {\n'
                 printf '\t\tnone: true,\n'
                 printf '\t},\n'
                 printf '\tprefer: true,\n'
+                if [ "$EU_ENABLE_BINARY_CHECKS" = "true" ]; then
+                    local CHECK_ELF_FILES="true"
+                    local CHECK_ELF_DEPENDENCIES="true"
+                    local CHECK_ALLOW_UNDEFINED_SYMBOLS="false"
+                    local ADDITIONNAL_DEPENDENCIES=""
+                    for ARG in "${ARGS[@]}"; do
+                        if [ "$ARG" = "NOCHECK" ]; then
+                            CHECK_ELF_FILES="false"
+                        fi
+                        if [ "$ARG" = "NODEPS" ]; then
+                            CHECK_ELF_FILES="false"
+                            CHECK_ELF_DEPENDENCIES="false"
+                        fi
+                        if [[ "$ARG" =~ ^ADDDEP ]]; then
+                            local NEWDEP=$(echo "$ARG" | cut -d '=' -f 2)
+                            ADDITIONNAL_DEPENDENCIES="\"${NEWDEP//,/\",\\n\\t\\t\"}\""
+                        fi
+                    done
+                    if [ "$CHECK_ELF_DEPENDENCIES" != "false" ]; then
+                        printf '\tcheck_elf_files: %s,\n' $CHECK_ELF_FILES
+                        printf '\tallow_undefined_symbols: %s,\n' $CHECK_ALLOW_UNDEFINED_SYMBOLS
+                        printf '\tshared_libs: [\n'
+                        "${PATCHELF}" --print-needed "${ANDROID_ROOT}/${OUTDIR}/${SRC}/bin/${FILE}" | while read -r lib; do
+                            local SKIPDEP="false"
+                            for ARG in "${ARGS[@]}"; do
+                                if [[ "$ARG" =~ ^REPLACEDEP ]]; then
+                                    local REPLACED_LIB="$(echo "$ARG" | cut -d '=' -f2 | cut -d ':' -f1)"
+                                    if [ "${REPLACED_LIB}" = "${lib/.so/}" ]; then
+                                        lib="$(echo "$ARG" | cut -d ':' -f2)"
+                                    fi
+                                fi
+                                if [[ "$ARG" =~ ^RMDEP ]]; then
+                                    local REMOVED_DEP="$(echo "$ARG" | cut -d '=' -f2)"
+                                    if [ "${lib/.so/}" == "$REMOVED_DEP" ]; then
+                                        SKIPDEP="true"
+                                    fi
+                                fi
+                            done
+                            if [ "$SKIPDEP" != "true" ]; then
+                                printf '\t\t"%s",\n' "${lib/.so/}"
+                            fi
+                        done
+                        if [ -n "$ADDITIONNAL_DEPENDENCIES" ]; then
+                            echo -ne "\t\t$ADDITIONNAL_DEPENDENCIES,\n"
+                        fi
+                        printf '\t],\n'
+                        # Check if the executable is 32 or 64 bits
+                        BITNESS="64"
+                        if LC_ALL=C file "${ANDROID_ROOT}/${OUTDIR}/${SRC}/bin/${FILE}" | grep -q 32-bit; then
+                            BITNESS="32"
+                        fi
+                        printf '\tcompile_multilib: "%s",\n' "$BITNESS"
+                    else
+                        printf '\tcheck_elf_files: false,\n'
+                    fi
+                else
+                    printf '\tcheck_elf_files: false,\n'
+                fi
             else
                 printf '\tsrc: "%s/bin/%s",\n' "$SRC" "$FILE"
                 printf '\tfilename: "%s",\n' "$BASENAME"
