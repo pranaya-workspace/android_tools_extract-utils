@@ -29,6 +29,63 @@ EXTRACT_TMP_DIR=$(mktemp -d)
 HOST="$(uname | tr '[:upper:]' '[:lower:]')"
 
 #
+# vndk_import
+#
+# Import a single library from VNDK prebuilts as <lib>-v<vndk version>
+# Does not add it in PRODUCT_PACKAGES
+# $1: Android root
+# $2: Library name
+# $3: VNDK Version
+# $4: Bitness (32, 64, both)
+# $5: Library dir (vndk-core, vndk-sp, ...)
+#
+function vndk_import() {
+    local ANDROID_ROOT="$1"
+    local LIBNAME="$2"
+    local VNDKVERSION="$3"
+    local BITS="$4"
+    local LIBDIR="$5"
+    local VENDOR_ROOT="${ANDROID_ROOT}/vendor/${VENDOR}/${DEVICE}"
+    local ANDROIDBP="${VENDOR_ROOT}/Android.bp"
+
+    if [ ! -f "${ANDROIDBP}" ]; then
+        echo "- ${ANDROIDBP} not found, can't import vndk library"
+        exit 1
+    fi
+    TARGET_ARM64=""
+    TARGET_ARM=""
+    if [ "$BITS" = "64" ] || [ "$BITS" = "both" ]; then
+        TARGET_ARM64="android_arm64: { srcs: [\"proprietary/vndk/v${VNDKVERSION}/arm64/${LIBNAME}-v${VNDKVERSION}.so\"] },"
+    fi
+    if [ "$BITS" = "32" ] || [ "$BITS" = "both" ]; then
+        TARGET_ARM="android_arm: { srcs: [\"proprietary/vndk/v${VNDKVERSION}/arm/${LIBNAME}-v${VNDKVERSION}.so\"] },"
+    fi
+    cat << EOF >> "${ANDROIDBP}"
+cc_prebuilt_library_shared {
+    name: "${LIBNAME}-v${VNDKVERSION}",
+    strip: {
+        none: true,
+    },
+    target: {
+        ${TARGET_ARM64}
+        ${TARGET_ARM}
+    },
+    check_elf_files: false,
+    compile_multilib: "${BITS}",
+    vendor_available: true
+}
+EOF
+    # Import the library
+    mkdir -p "${VENDOR_ROOT}/proprietary/vndk/v${VNDKVERSION}/arm"{,64}
+    if [ "$BITS" = "32" ] || [ "$BITS" = "both" ]; then
+        cp -r "${ANDROID_ROOT}/prebuilts/vndk/v${VNDKVERSION}/arm64/arch-arm-armv8-a/shared/${LIBDIR}/${LIBNAME}.so" "${VENDOR_ROOT}/proprietary/vndk/v${VNDKVERSION}/arm/${LIBNAME}-v${VNDKVERSION}.so"
+    fi
+    if [ "$BITS" = "64" ] || [ "$BITS" = "both" ]; then
+        cp -r "${ANDROID_ROOT}/prebuilts/vndk/v${VNDKVERSION}/arm64/arch-arm64-armv8-a/shared/${LIBDIR}/${LIBNAME}.so" "${VENDOR_ROOT}/proprietary/vndk/v${VNDKVERSION}/arm64/${LIBNAME}-v${VNDKVERSION}.so"
+    fi
+}
+
+#
 # cleanup
 #
 # kill our tmpfiles with fire on exit
