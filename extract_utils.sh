@@ -572,19 +572,20 @@ function write_blueprint_packages() {
                         for ARG in "${ARGS[@]}"; do
                             if [[ "$ARG" =~ ^REPLACEDEP ]]; then
                                 local REPLACED_LIB="$(echo "$ARG" | cut -d '=' -f2 | cut -d ':' -f1)"
-                                if [ "${REPLACED_LIB}" = "${lib/.so/}" ]; then
-                                    lib="$(echo "$ARG" | cut -d ':' -f2)"
+                                if [ "${REPLACED_LIB}" = "${lib%.*}" ]; then
+                                    # Re-append .so suffix as it will be removed later
+                                    lib="$(echo "$ARG" | cut -d ':' -f2).so"
                                 fi
                             fi
                             if [[ "$ARG" =~ ^RMDEP ]]; then
                                 local REMOVED_DEP="$(echo "$ARG" | cut -d '=' -f2)"
-                                if [ "${lib/.so/}" == "$REMOVED_DEP" ]; then
+                                if [ "${lib%.*}" == "$REMOVED_DEP" ]; then
                                     SKIPDEP="true"
                                 fi
                             fi
                         done
                         if [ "$SKIPDEP" != "true" ]; then
-                            printf '\t\t"%s",\n' "${lib/.so/}"
+                            printf '\t\t"%s",\n' "${lib%.*}"
                         fi
                     done
                     if [ -n "$ADDITIONNAL_DEPENDENCIES" ]; then
@@ -695,18 +696,18 @@ function write_blueprint_packages() {
                                 if [[ "$ARG" =~ ^REPLACEDEP ]]; then
                                     local REPLACED_LIB="$(echo "$ARG" | cut -d '=' -f2 | cut -d ':' -f1)"
                                     if [ "${REPLACED_LIB}" = "${lib/.so/}" ]; then
-                                        lib="$(echo "$ARG" | cut -d ':' -f2)"
+                                        lib="$(echo "$ARG" | cut -d ':' -f2).so"
                                     fi
                                 fi
                                 if [[ "$ARG" =~ ^RMDEP ]]; then
                                     local REMOVED_DEP="$(echo "$ARG" | cut -d '=' -f2)"
-                                    if [ "${lib/.so/}" == "$REMOVED_DEP" ]; then
+                                    if [ "${lib%.*}" == "$REMOVED_DEP" ]; then
                                         SKIPDEP="true"
                                     fi
                                 fi
                             done
                             if [ "$SKIPDEP" != "true" ]; then
-                                printf '\t\t"%s",\n' "${lib/.so/}"
+                                printf '\t\t"%s",\n' "${lib%.*}"
                             fi
                         done
                         if [ -n "$ADDITIONNAL_DEPENDENCIES" ]; then
