@@ -481,6 +481,11 @@ function write_blueprint_packages() {
             EXTENSION=""
         fi
 
+        # Keep .xml extension for VINTF xmls
+        if [ "$EXTENSION" = "xml" ] && [ "$DIRNAME" = "vintf/manifest" ]; then
+            PKGNAME="$BASENAME"
+        fi
+
         # Allow overriding module name
         STEM=
         for ARG in "${ARGS[@]}"; do
